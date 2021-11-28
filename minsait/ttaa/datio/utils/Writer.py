@@ -6,9 +6,8 @@ from minsait.ttaa.datio.common.naming.PlayerInput import *
 
 class Writer:
     def write(self, df: DataFrame):
-        df \
-            .coalesce(2) \
+            df.coalesce(1) \
             .write \
-            .partitionBy(team_position.name) \
+            .partitionBy(nationality.name) \
             .mode(OVERWRITE) \
             .parquet(OUTPUT_PATH);

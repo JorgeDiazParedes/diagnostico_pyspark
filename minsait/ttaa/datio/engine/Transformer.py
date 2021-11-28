@@ -13,8 +13,14 @@ class Transformer(Writer):
         df: DataFrame = self.read_input()
         df.printSchema()
         df = self.clean_data(df)
-        df = self.example_window_function(df)
+
+        if AGE_PARAMS == 1:
+            df = df.filter(age.column() < 23)
+
         df = self.column_selection(df)
+        df = self.add_player_cat(df)
+        df = self.add_potential_vs_overall(df)
+        df = self.filter_column(df)
 
         # for show 100 records after your transformations and show the DataFrame schema
         df.show(n=100, truncate=False)
@@ -53,30 +59,68 @@ class Transformer(Writer):
         """
         df = df.select(
             short_name.column(),
-            overall.column(),
+            long_name.column(),
+            age.column(),
             height_cm.column(),
-            team_position.column(),
-            catHeightByPosition.column()
+            weight_kg.column(),
+            nationality.column(),
+            club_name.column(),
+            overall.column(),
+            potential.column(),
+            team_position.column()
         )
         return df
 
-    def example_window_function(self, df: DataFrame) -> DataFrame:
+    def add_player_cat(self, df: DataFrame) -> DataFrame:
         """
         :param df: is a DataFrame with players information (must have team_position and height_cm columns)
-        :return: add to the DataFrame the column "cat_height_by_position"
+        :return: add to the DataFrame the column "player_cat"
              by each position value
-             cat A for if is in 20 players tallest
-             cat B for if is in 50 players tallest
-             cat C for the rest
+             cat A si el jugador es de los mejores 3 jugadores en su posición de su país
+             cat B si el jugador es de los mejores 5 jugadores en su posición de su país
+             cat C si el jugador es de los mejores 10 jugadores en su posición de su país
+             cat D for the rest
         """
         w: WindowSpec = Window \
-            .partitionBy(team_position.column()) \
-            .orderBy(height_cm.column().desc())
+            .partitionBy(nationality.column(), team_position.column())\
+            .orderBy(overall.column().desc())
+
         rank: Column = f.rank().over(w)
 
-        rule: Column = f.when(rank < 10, "A") \
-            .when(rank < 50, "B") \
-            .otherwise("C")
+        rule: Column = f.when(rank < 3, A) \
+            .when(rank < 5, B) \
+            .when(rank < 10, C) \
+            .otherwise(D)
 
-        df = df.withColumn(catHeightByPosition.name, rule)
+        df = df.withColumn(player_cat.name, rule)
+
         return df
+
+    def add_potential_vs_overall(self, df: DataFrame) -> DataFrame:
+        """
+        :param df: is a DataFrame with players information (must have team_position and height_cm columns)
+        :return: add to the DataFrame the column "potential_vs_overall "
+             by Columna potential dividida por la columna overall
+        """
+
+        df = df.withColumn(potential_vs_overall.name, potential.column() / overall.column())
+
+        return df
+
+    def filter_column(self, df: DataFrame) -> DataFrame:
+        """
+        :param df: is a DataFrame with players information (must have team_position and height_cm columns)
+        :return: filter to the DataFrame the column
+             by Si player_cat esta en los siguientes valores: A, B
+             Si player_cat es C y potential_vs_overall es superior a 1.15
+             Si player_cat es D y potential_vs_overall es superior a 1.25
+        """
+
+        l = [A, B]
+
+        df = df.filter((player_cat.column().isin(l)) \
+                        | ((player_cat.column() == C) & (potential_vs_overall.column() > 1.15)) \
+                        | ((player_cat.column() == D) & (potential_vs_overall.column() > 1.25)))
+
+        return df
+
